@@ -1,11 +1,13 @@
+from threading import Lock
 from decide_ai_service_base.task import Task
 from src.task import PdfScrapingTask
-from decide_ai_service_base.util import fail_busy_and_scheduled_tasks, process_open_tasks, wait_for_triplestore
+from decide_ai_service_base.util import fail_busy_and_scheduled_tasks, TaskProcessor, process_open_tasks, wait_for_triplestore
 from decide_ai_service_base.schema import NotificationResponse, TaskOperationsResponse
 from decide_ai_service_base.task import Task
 
 from fastapi import APIRouter, BackgroundTasks
 
+_open_tasks_lock = Lock()
 
 @app.on_event("startup")
 async def startup_event():
@@ -13,7 +15,7 @@ async def startup_event():
     # on startup fail existing busy tasks
     fail_busy_and_scheduled_tasks()
     # on startup also immediately start scheduled tasks
-    process_open_tasks()
+    process_open_tasks(_open_tasks_lock)
 
 
 router = APIRouter()
@@ -21,7 +23,8 @@ router = APIRouter()
 
 @router.post("/delta", status_code=202)
 async def delta(background_tasks: BackgroundTasks) -> NotificationResponse:
-    background_tasks.add_task(process_open_tasks)
+    processor = TaskProcessor(_open_tasks_lock)
+    background_tasks.add_task(processor)
     return NotificationResponse(status="accepted", message="Processing started")
 
 
